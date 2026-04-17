@@ -1,11 +1,12 @@
 package main
 
 import (
-	amqp "github.com/rabbitmq/amqp091-go"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 func main() {
