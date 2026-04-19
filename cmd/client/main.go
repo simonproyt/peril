@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -38,9 +36,36 @@ func main() {
 
 	fmt.Printf("Waiting for pause messages on queue %q...\n", queue.Name)
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	gs := gamelogic.NewGameState(username)
 
-	<-sigCh
-	fmt.Println("Signal received, shutting down client...")
+	for {
+		words := gamelogic.GetInput()
+		if len(words) == 0 {
+			continue
+		}
+
+		switch words[0] {
+		case "spawn":
+			if err := gs.CommandSpawn(words); err != nil {
+				fmt.Printf("Failed to spawn unit: %v\n", err)
+			}
+		case "move":
+			if _, err := gs.CommandMove(words); err != nil {
+				fmt.Printf("Failed to move unit: %v\n", err)
+			} else {
+				fmt.Println("Move succeeded")
+			}
+		case "status":
+			gs.CommandStatus()
+		case "help":
+			gamelogic.PrintClientHelp()
+		case "spam":
+			fmt.Println("Spamming not allowed yet!")
+		case "quit":
+			gamelogic.PrintQuit()
+			return
+		default:
+			fmt.Printf("I don't understand the command %q.\n", words[0])
+		}
+	}
 }
