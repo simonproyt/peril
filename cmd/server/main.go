@@ -40,7 +40,32 @@ func main() {
 		false,
 		nil,
 	); err != nil {
-		fmt.Printf("Failed to declare exchange: %v\n", err)
+		fmt.Printf("Failed to declare direct exchange: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := ch.ExchangeDeclare(
+		routing.ExchangePerilTopic,
+		"topic",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	); err != nil {
+		fmt.Printf("Failed to declare topic exchange: %v\n", err)
+		os.Exit(1)
+	}
+
+	qCh, _, err := pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, routing.GameLogSlug, routing.GameLogSlug+".*", pubsub.DurableQueue)
+	if err != nil {
+		fmt.Printf("Failed to declare and bind durable queue: %v\n", err)
+		os.Exit(1)
+	}
+	defer qCh.Close()
+
+	if err := pubsub.PublishJSON(ch, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{IsPaused: false}); err != nil {
+		fmt.Printf("Failed to publish initial state message: %v\n", err)
 		os.Exit(1)
 	}
 
