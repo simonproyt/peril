@@ -52,7 +52,15 @@ func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queu
 	autoDelete := queueType == TransientQueue
 	exclusive := queueType == TransientQueue
 
-	queue, err := ch.QueueDeclare(queueName, durable, autoDelete, exclusive, false, nil)
+	args := amqp.Table{}
+	if queueType == TransientQueue {
+		args = amqp.Table{
+			"x-dead-letter-exchange":    "peril_dlx",
+			"x-dead-letter-routing-key": "peril_dlq",
+		}
+	}
+
+	queue, err := ch.QueueDeclare(queueName, durable, autoDelete, exclusive, false, args)
 	if err != nil {
 		ch.Close()
 		return nil, amqp.Queue{}, err
