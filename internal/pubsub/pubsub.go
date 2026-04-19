@@ -7,6 +7,13 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+type SimpleQueueType int
+
+const (
+	DurableQueue SimpleQueueType = iota
+	TransientQueue
+)
+
 func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	body, err := json.Marshal(val)
 	if err != nil {
@@ -24,4 +31,28 @@ func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
 			Body:        body,
 		},
 	)
+}
+
+func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType) (*amqp.Channel, amqp.Queue, error) {
+	ch, err := conn.Channel()
+	if err != nil {
+		return nil, amqp.Queue{}, err
+	}
+
+	durable := queueType == DurableQueue
+	autoDelete := queueType == TransientQueue
+	exclusive := queueType == TransientQueue
+
+	queue, err := ch.QueueDeclare(queueName, durable, autoDelete, exclusive, false, nil)
+	if err != nil {
+		ch.Close()
+		return nil, amqp.Queue{}, err
+	}
+
+	if err := ch.QueueBind(queue.Name, key, exchange, false, nil); err != nil {
+		ch.Close()
+		return nil, amqp.Queue{}, err
+	}
+
+	return ch, queue, nil
 }
