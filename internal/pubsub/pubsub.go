@@ -34,6 +34,14 @@ func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	)
 }
 
+type AckType int
+
+const (
+	Ack AckType = iota
+	NackRequeue
+	NackDiscard
+)
+
 func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType) (*amqp.Channel, amqp.Queue, error) {
 	ch, err := conn.Channel()
 	if err != nil {
@@ -58,7 +66,7 @@ func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queu
 	return ch, queue, nil
 }
 
-func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType, handler func(T)) error {
+func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType, handler func(T) AckType) error {
 	ch, _, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
 		return err
@@ -83,12 +91,37 @@ func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string
 			var msg T
 			if err := json.Unmarshal(d.Body, &msg); err != nil {
 				fmt.Printf("Failed to unmarshal message: %v\n", err)
-				d.Ack(false)
+				if err := d.Nack(false, false); err != nil {
+					fmt.Printf("Failed to nack-discard message: %v\n", err)
+				}
 				continue
 			}
-			handler(msg)
-			if err := d.Ack(false); err != nil {
-				fmt.Printf("Failed to ack message: %v\n", err)
+
+			switch handler(msg) {
+			case Ack:
+				if err := d.Ack(false); err != nil {
+					fmt.Printf("Failed to ack message: %v\n", err)
+				} else {
+					fmt.Println("Message ACKed")
+				}
+			case NackRequeue:
+				if err := d.Nack(false, true); err != nil {
+					fmt.Printf("Failed to nack-requeue message: %v\n", err)
+				} else {
+					fmt.Println("Message NACKed and requeued")
+				}
+			case NackDiscard:
+				if err := d.Nack(false, false); err != nil {
+					fmt.Printf("Failed to nack-discard message: %v\n", err)
+				} else {
+					fmt.Println("Message NACKed and discarded")
+				}
+			default:
+				if err := d.Nack(false, false); err != nil {
+					fmt.Printf("Failed to nack-discard message: %v\n", err)
+				} else {
+					fmt.Println("Message NACKed and discarded")
+				}
 			}
 		}
 	}()
