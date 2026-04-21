@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -44,10 +45,35 @@ func handlerMove(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.ArmyM
 	}
 }
 
-func handlerWar(gs *gamelogic.GameState) func(gamelogic.RecognitionOfWar) pubsub.AckType {
+func publishGameLog(ch *amqp.Channel, username, message string) error {
+	logMsg := routing.GameLog{
+		CurrentTime: time.Now(),
+		Message:     message,
+		Username:    username,
+	}
+	logKey := fmt.Sprintf("%s.%s", routing.GameLogSlug, username)
+	return pubsub.PublishGob(ch, routing.ExchangePerilTopic, logKey, logMsg)
+}
+
+func handlerWar(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.RecognitionOfWar) pubsub.AckType {
 	return func(rw gamelogic.RecognitionOfWar) pubsub.AckType {
 		defer fmt.Print("> ")
-		outcome, _, _ := gs.HandleWar(rw)
+		outcome, winner, loser := gs.HandleWar(rw)
+		var logMessage string
+		switch outcome {
+		case gamelogic.WarOutcomeOpponentWon, gamelogic.WarOutcomeYouWon:
+			logMessage = fmt.Sprintf("%s won a war against %s", winner, loser)
+		case gamelogic.WarOutcomeDraw:
+			logMessage = fmt.Sprintf("A war between %s and %s resulted in a draw", winner, loser)
+		}
+
+		if logMessage != "" {
+			if err := publishGameLog(ch, rw.Attacker.Username, logMessage); err != nil {
+				fmt.Printf("Failed to publish game log: %v\n", err)
+				return pubsub.NackRequeue
+			}
+		}
+
 		switch outcome {
 		case gamelogic.WarOutcomeNotInvolved:
 			return pubsub.NackRequeue
@@ -104,7 +130,7 @@ func main() {
 
 	warQueueName := "war"
 	warBindingKey := fmt.Sprintf("%s.*", routing.WarRecognitionsPrefix)
-	if err := pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, warQueueName, warBindingKey, pubsub.DurableQueue, handlerWar(gs)); err != nil {
+	if err := pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, warQueueName, warBindingKey, pubsub.DurableQueue, handlerWar(gs, pubCh)); err != nil {
 		fmt.Printf("Failed to subscribe to war queue: %v\n", err)
 		os.Exit(1)
 	}
