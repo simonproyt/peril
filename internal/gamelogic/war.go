@@ -22,12 +22,7 @@ func (gs *GameState) HandleWar(rw RecognitionOfWar) (outcome WarOutcome, winner 
 
 	player := gs.GetPlayerSnap()
 
-	if player.Username == rw.Defender.Username {
-		fmt.Printf("%s, you published the war.\n", player.Username)
-		return WarOutcomeNotInvolved, "", ""
-	}
-
-	if player.Username != rw.Attacker.Username {
+	if player.Username != rw.Attacker.Username && player.Username != rw.Defender.Username {
 		fmt.Printf("%s, you are not involved in this war.\n", player.Username)
 		return WarOutcomeNotInvolved, "", ""
 	}
