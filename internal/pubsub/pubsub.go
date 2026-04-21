@@ -96,9 +96,22 @@ func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queu
 	return ch, queue, nil
 }
 
-func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType, handler func(T) AckType) error {
-	ch, _, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+func subscribe[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	simpleQueueType SimpleQueueType,
+	handler func(T) AckType,
+	unmarshaller func([]byte) (T, error),
+) error {
+	ch, _, err := DeclareAndBind(conn, exchange, queueName, key, simpleQueueType)
 	if err != nil {
+		return err
+	}
+
+	if err := ch.Qos(1, 0, false); err != nil {
+		ch.Close()
 		return err
 	}
 
@@ -118,8 +131,8 @@ func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string
 
 	go func() {
 		for d := range deliveries {
-			var msg T
-			if err := json.Unmarshal(d.Body, &msg); err != nil {
+			msg, err := unmarshaller(d.Body)
+			if err != nil {
 				fmt.Printf("Failed to unmarshal message: %v\n", err)
 				if err := d.Nack(false, false); err != nil {
 					fmt.Printf("Failed to nack-discard message: %v\n", err)
@@ -157,4 +170,19 @@ func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string
 	}()
 
 	return nil
+}
+
+func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType, handler func(T) AckType) error {
+	return subscribe(conn, exchange, queueName, key, queueType, handler, func(data []byte) (T, error) {
+		var msg T
+		return msg, json.Unmarshal(data, &msg)
+	})
+}
+
+func SubscribeGob[T any](conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType, handler func(T) AckType) error {
+	return subscribe(conn, exchange, queueName, key, queueType, handler, func(data []byte) (T, error) {
+		var msg T
+		err := gob.NewDecoder(bytes.NewReader(data)).Decode(&msg)
+		return msg, err
+	})
 }

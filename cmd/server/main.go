@@ -12,6 +12,17 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+func handlerGameLog() func(routing.GameLog) pubsub.AckType {
+	return func(gamelog routing.GameLog) pubsub.AckType {
+		defer fmt.Print("> ")
+		if err := gamelogic.WriteLog(gamelog); err != nil {
+			fmt.Printf("Failed to write game log: %v\n", err)
+			return pubsub.NackRequeue
+		}
+		return pubsub.Ack
+	}
+}
+
 func main() {
 	connectionString := "amqp://guest:guest@localhost:5672/"
 
@@ -57,12 +68,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	qCh, _, err := pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, routing.GameLogSlug, routing.GameLogSlug+".*", pubsub.DurableQueue)
-	if err != nil {
-		fmt.Printf("Failed to declare and bind durable queue: %v\n", err)
+	if err := pubsub.SubscribeGob(conn, routing.ExchangePerilTopic, routing.GameLogSlug, routing.GameLogSlug+".*", pubsub.DurableQueue, handlerGameLog()); err != nil {
+		fmt.Printf("Failed to subscribe to game log queue: %v\n", err)
 		os.Exit(1)
 	}
-	defer qCh.Close()
 
 	if err := pubsub.PublishJSON(ch, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{IsPaused: false}); err != nil {
 		fmt.Printf("Failed to publish initial state message: %v\n", err)
