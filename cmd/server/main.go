@@ -34,7 +34,7 @@ func main() {
 	if err := ch.ExchangeDeclare(
 		routing.ExchangePerilDirect,
 		"direct",
-		false,
+		true,
 		false,
 		false,
 		false,
